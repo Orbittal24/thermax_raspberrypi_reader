@@ -64,17 +64,22 @@ const server = net.createServer((conn) => {
       // Hourly Processing
       if (currentHour !== lastHour) {
         console.log("HOUR CHANGED");
-        await calculateAndInsertHourlyAverages(meterId, lastHour);
+        await calculateAndInsertHourlyAveragesForAllMeters();
         lastHour = currentHour;
       }
 
-      // Daily Processing
-      if (currentDate !== lastDate) {
-        console.log(`DATE CHANGED: Processing data for ${currentDate}`);
-        await calculateAndInsertDailyData(meterId, lastDate);
-        lastDate = currentDate;
-      }
-
+    //   // Daily Processing
+    //   if (currentDate !== lastDate) {
+    //     console.log(`DATE CHANGED: Processing data for ${currentDate}`);
+    //     await calculateAndInsertDailyData(meterId, lastDate);
+    //     lastDate = currentDate;
+    //   }
+// Modify this in your main server function:
+if (currentDate !== lastDate) {
+    console.log(`DATE CHANGED: Processing data for ${currentDate}`);
+    await calculateAndInsertDailyDataForAllMeters(lastDate);
+    lastDate = currentDate;
+  }
       // Weekly Processing
       if (currentDay === 1 && currentDate !== lastWeekMonday) {
         console.log("WEEK CHANGED: Processing weekly data.");
@@ -228,185 +233,401 @@ function getCurrentDateFormattedMinusOneHour() {
 }
 
 
-async function calculateAndInsertHourlyAverages(meterId, lastHour) {
-  try {
-    const pool = await sql.connect(sqlConfig);
-    const liveTable = `[EMS_thermax].[dbo].[master_live_data_m${meterId}]`;
-    const averageTable = `[EMS_thermax].[dbo].[average_m${meterId}]`;
-    const energyConsumptionTable = `[EMS_thermax].[dbo].[energy_consumption]`;
+// async function calculateAndInsertHourlyAverages(meterId, lastHour) {
+//   try {
+//     const pool = await sql.connect(sqlConfig);
+//     const liveTable = `[EMS_thermax].[dbo].[master_live_data_m${meterId}]`;
+//     const averageTable = `[EMS_thermax].[dbo].[average_m${meterId}]`;
+//     const energyConsumptionTable = `[EMS_thermax].[dbo].[energy_consumption]`;
 
-    console.log("Processing hourly averages for table:", liveTable);
-    let startDatetime = `${getCurrentDateFormattedMinusOneHour()}:00:00`;
-    let endDatetime = `${getCurrentDateFormattedMinusOneHour()}:59:59`;
-    // Fetch the last inserted date in energy_consumption
-    const lastDateQuery = `
-      SELECT TOP 1 CONVERT(VARCHAR(10), date_time, 120) AS lastDate
-      FROM ${energyConsumptionTable}
-      WHERE meter_id = ${meterId}
-      ORDER BY date_time DESC;
-    `;
-    const lastDateResult = await pool.request().query(lastDateQuery);
-    const lastDate = lastDateResult.recordset.length > 0 ? lastDateResult.recordset[0].lastDate : null;
+//     console.log("Processing hourly averages for table:", liveTable);
+//     let startDatetime = `${getCurrentDateFormattedMinusOneHour()}:00:00`;
+//     let endDatetime = `${getCurrentDateFormattedMinusOneHour()}:59:59`;
+//     // Fetch the last inserted date in energy_consumption
+//     const lastDateQuery = `
+//       SELECT TOP 1 CONVERT(VARCHAR(10), date_time, 120) AS lastDate
+//       FROM ${energyConsumptionTable}
+//       WHERE meter_id = ${meterId}
+//       ORDER BY date_time DESC;
+//     `;
+//     const lastDateResult = await pool.request().query(lastDateQuery);
+//     const lastDate = lastDateResult.recordset.length > 0 ? lastDateResult.recordset[0].lastDate : null;
 
-    // Get the current date for comparison
-    const currentDate = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+//     // Get the current date for comparison
+//     const currentDate = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
 
-    // Calculate hourly kWh consumption difference
-    const Hr_C_kwh_query = `
-      WITH HourlyData AS (
-          SELECT
-              FORMAT(date_time, 'yyyy-MM-dd HH') AS hour_group,
-              meter_id,
-              kWh,
-              ROW_NUMBER() OVER (PARTITION BY FORMAT(date_time, 'yyyy-MM-dd HH') ORDER BY date_time ASC) AS rn_first,
-              ROW_NUMBER() OVER (PARTITION BY FORMAT(date_time, 'yyyy-MM-dd HH') ORDER BY date_time DESC) AS rn_last
-          FROM ${liveTable}
-      ),
-      FirstLastEntries AS (
-          SELECT
-              hour_group,
-              meter_id,
-              MAX(CASE WHEN rn_first = 1 THEN kWh END) AS kWh_first,
-              MAX(CASE WHEN rn_last = 1 THEN kWh END) AS kWh_last
-          FROM HourlyData
-          GROUP BY hour_group, meter_id
-      )
-      SELECT
-          MAX(kWh_last - kWh_first) AS kWh_difference
-      FROM FirstLastEntries
-      WHERE meter_id = ${meterId};
-    `;
-    const Hr_C_kwh = await pool.request().query(Hr_C_kwh_query);
-    const kWhDifference = Hr_C_kwh.recordset[0]?.kWh_difference || 0;
+//     // Calculate hourly kWh consumption difference
+//     const Hr_C_kwh_query = `
+//       WITH HourlyData AS (
+//           SELECT
+//               FORMAT(date_time, 'yyyy-MM-dd HH') AS hour_group,
+//               meter_id,
+//               kWh,
+//               ROW_NUMBER() OVER (PARTITION BY FORMAT(date_time, 'yyyy-MM-dd HH') ORDER BY date_time ASC) AS rn_first,
+//               ROW_NUMBER() OVER (PARTITION BY FORMAT(date_time, 'yyyy-MM-dd HH') ORDER BY date_time DESC) AS rn_last
+//           FROM ${liveTable}
+//       ),
+//       FirstLastEntries AS (
+//           SELECT
+//               hour_group,
+//               meter_id,
+//               MAX(CASE WHEN rn_first = 1 THEN kWh END) AS kWh_first,
+//               MAX(CASE WHEN rn_last = 1 THEN kWh END) AS kWh_last
+//           FROM HourlyData
+//           GROUP BY hour_group, meter_id
+//       )
+//       SELECT
+//           MAX(kWh_last - kWh_first) AS kWh_difference
+//       FROM FirstLastEntries
+//       WHERE meter_id = ${meterId};
+//     `;
+//     const Hr_C_kwh = await pool.request().query(Hr_C_kwh_query);
+//     const kWhDifference = Hr_C_kwh.recordset[0]?.kWh_difference || 0;
 
-    console.log("Calculated hourly kWh difference:", kWhDifference);
-
-    
-const avgQuery = `
-  SELECT 
-    meter_id, 
-    MAX(load_name) AS load_name, 
-    AVG(CAST(Vry AS FLOAT)) AS avgVry,
-    AVG(CAST(Vyb AS FLOAT)) AS avgVyb,
-    AVG(CAST(Vbr AS FLOAT)) AS avgVbr,
-    AVG(CAST(VLN1 AS FLOAT)) AS avgVLN1,
-    AVG(CAST(VLN2 AS FLOAT)) AS avgVLN2,
-    AVG(CAST(VLN3 AS FLOAT)) AS avgVLN3,
-    AVG(CAST(VLL1 AS FLOAT)) AS avgVLL1,
-    AVG(CAST(VLL2 AS FLOAT)) AS avgVLL2,
-    AVG(CAST(VLL3 AS FLOAT)) AS avgVLL3,
-    AVG(CAST(Ir AS FLOAT)) AS avgIr,
-    AVG(CAST(Iy AS FLOAT)) AS avgIy,
-    AVG(CAST(Ib AS FLOAT)) AS avgIb,
-    AVG(CAST(PF AS FLOAT)) AS avgPF,
-    AVG(CAST(F AS FLOAT)) AS avgF,
-    AVG(CAST(kW AS FLOAT)) AS avgKW,
-    AVG(CAST(kWh AS FLOAT)) AS avgKWh,
-    AVG(CAST(kVAh AS FLOAT)) AS avgKVAh,
-     AVG(CAST(MD AS FLOAT)) AS avgMD,
-      MIN(CAST(MD AS FLOAT)) AS minMD,
-    MAX(CAST(MD AS FLOAT)) AS maxMD,
-    FORMAT(MAX(date_time), 'yyyy-MM-dd HH:mm:ss') AS avgDate
-  FROM ${liveTable}
-  WHERE TRY_CAST(date_time AS DATETIME) IS NOT NULL
-    AND date_time BETWEEN '${startDatetime}' AND '${endDatetime}' -- Use BETWEEN for the time range
-  GROUP BY meter_id;
-`;
-
-console.log("avgQuery",avgQuery);
-
-    const avgResult = await pool.request().query(avgQuery);
-
-    console.log("Avarge Query result", avgResult);
+//     console.log("Calculated hourly kWh difference:", kWhDifference);
 
     
-    for (const avgData of avgResult.recordset) {
-      const { meter_id, load_name, avgDate } = avgData;
+// const avgQuery = `
+//   SELECT 
+//     meter_id, 
+//     MAX(load_name) AS load_name, 
+//     AVG(CAST(Vry AS FLOAT)) AS avgVry,
+//     AVG(CAST(Vyb AS FLOAT)) AS avgVyb,
+//     AVG(CAST(Vbr AS FLOAT)) AS avgVbr,
+//     AVG(CAST(VLN1 AS FLOAT)) AS avgVLN1,
+//     AVG(CAST(VLN2 AS FLOAT)) AS avgVLN2,
+//     AVG(CAST(VLN3 AS FLOAT)) AS avgVLN3,
+//     AVG(CAST(VLL1 AS FLOAT)) AS avgVLL1,
+//     AVG(CAST(VLL2 AS FLOAT)) AS avgVLL2,
+//     AVG(CAST(VLL3 AS FLOAT)) AS avgVLL3,
+//     AVG(CAST(Ir AS FLOAT)) AS avgIr,
+//     AVG(CAST(Iy AS FLOAT)) AS avgIy,
+//     AVG(CAST(Ib AS FLOAT)) AS avgIb,
+//     AVG(CAST(PF AS FLOAT)) AS avgPF,
+//     AVG(CAST(F AS FLOAT)) AS avgF,
+//     AVG(CAST(kW AS FLOAT)) AS avgKW,
+//     AVG(CAST(kWh AS FLOAT)) AS avgKWh,
+//     AVG(CAST(kVAh AS FLOAT)) AS avgKVAh,
+//      AVG(CAST(MD AS FLOAT)) AS avgMD,
+//       MIN(CAST(MD AS FLOAT)) AS minMD,
+//     MAX(CAST(MD AS FLOAT)) AS maxMD,
+//     FORMAT(MAX(date_time), 'yyyy-MM-dd HH:mm:ss') AS avgDate
+//   FROM ${liveTable}
+//   WHERE TRY_CAST(date_time AS DATETIME) IS NOT NULL
+//     AND date_time BETWEEN '${startDatetime}' AND '${endDatetime}' -- Use BETWEEN for the time range
+//   GROUP BY meter_id;
+// `;
+
+// console.log("avgQuery",avgQuery);
+
+//     const avgResult = await pool.request().query(avgQuery);
+
+//     console.log("Avarge Query result", avgResult);
+
+    
+//     for (const avgData of avgResult.recordset) {
+//       const { meter_id, load_name, avgDate } = avgData;
      
       
-      console.log(startDatetime); // Outputs: 2024-12-01 03:00:00
+//       console.log(startDatetime); // Outputs: 2024-12-01 03:00:00
       
-      // Insert hourly averages into the average table
-      const insertAvgQuery = `
-        INSERT INTO ${averageTable}
-          (meter_id, load_name, Vry, Vyb, Vbr, VLN1, VLN2, VLN3, VLL1, VLL2, VLL3, Ir, Iy, Ib, PF, F, kW, kWh, kVAh, kwh_C, date_time, MD, minMD, maxMD)
-        VALUES
-          (${meter_id}, '${load_name}', ${avgData.avgVry}, ${avgData.avgVyb}, ${avgData.avgVbr}, ${avgData.avgVLN1}, ${avgData.avgVLN2}, ${avgData.avgVLN3},
-           ${avgData.avgVLL1}, ${avgData.avgVLL2}, ${avgData.avgVLL3}, ${avgData.avgIr}, ${avgData.avgIy}, ${avgData.avgIb},
-           ${avgData.avgPF}, ${avgData.avgF}, ${avgData.avgKW}, ${avgData.avgKWh}, ${avgData.avgKVAh}, ${kWhDifference}, '${startDatetime}', ${avgData.avgMD}, ${avgData.minMD}, ${avgData.maxMD});
-      `;
-      await pool.request().query(insertAvgQuery);
+//       // Insert hourly averages into the average table
+//       const insertAvgQuery = `
+//         INSERT INTO ${averageTable}
+//           (meter_id, load_name, Vry, Vyb, Vbr, VLN1, VLN2, VLN3, VLL1, VLL2, VLL3, Ir, Iy, Ib, PF, F, kW, kWh, kVAh, kwh_C, date_time, MD, minMD, maxMD)
+//         VALUES
+//           (${meter_id}, '${load_name}', ${avgData.avgVry}, ${avgData.avgVyb}, ${avgData.avgVbr}, ${avgData.avgVLN1}, ${avgData.avgVLN2}, ${avgData.avgVLN3},
+//            ${avgData.avgVLL1}, ${avgData.avgVLL2}, ${avgData.avgVLL3}, ${avgData.avgIr}, ${avgData.avgIy}, ${avgData.avgIb},
+//            ${avgData.avgPF}, ${avgData.avgF}, ${avgData.avgKW}, ${avgData.avgKWh}, ${avgData.avgKVAh}, ${kWhDifference}, '${startDatetime}', ${avgData.avgMD}, ${avgData.minMD}, ${avgData.maxMD});
+//       `;
+//       await pool.request().query(insertAvgQuery);
 
-      console.log("Hourly average data inserted:", insertAvgQuery);
-    }
+//       console.log("Hourly average data inserted:", insertAvgQuery);
+//     }
 
  
-  try {
-    console.log(`Hourly averages processed successfully for Meter ${meterId}.`);
+//   try {
+//     console.log(`Hourly averages processed successfully for Meter ${meterId}.`);
   
-    // Delete live data after processing
-    const deleteQuery = `
-      DELETE FROM ${liveTable}
-      WHERE date_time BETWEEN '${startDatetime}' AND '${endDatetime}';
-    `;
-  console.log("deleteQuery",deleteQuery);
+//     // Delete live data after processing
+//     const deleteQuery = `
+//       DELETE FROM ${liveTable}
+//       WHERE date_time BETWEEN '${startDatetime}' AND '${endDatetime}';
+//     `;
+//   console.log("deleteQuery",deleteQuery);
   
-    const deleteResult = await pool.request().query(deleteQuery);
-    console.log(`Hourly data deleted from live table for Meter ${meterId}. Rows affected: ${deleteResult.rowsAffected}`);
-  } catch (err) {
-    console.error(`Error processing hourly averages for Meter ${meterId}:`, err);
-  } finally {
-  }
-} catch (err) {
-  console.error(`Error processing daily data for Meter ${meterId}:`, err);
-}
-}
+//     const deleteResult = await pool.request().query(deleteQuery);
+//     console.log(`Hourly data deleted from live table for Meter ${meterId}. Rows affected: ${deleteResult.rowsAffected}`);
+//   } catch (err) {
+//     console.error(`Error processing hourly averages for Meter ${meterId}:`, err);
+//   } finally {
+//   }
+// } catch (err) {
+//   console.error(`Error processing daily data for Meter ${meterId}:`, err);
+// }
+// }
 
 
 // /////////////////////////////////////////daily data //////////////////
 
 
-async function calculateAndInsertDailyData(meterId, last_date) {
+
+async function calculateAndInsertHourlyAveragesForAllMeters() {
+    try {
+      const pool = await sql.connect(sqlConfig);
+      const startDatetime = `${getCurrentDateFormattedMinusOneHour()}:00:00`;
+      const endDatetime = `${getCurrentDateFormattedMinusOneHour()}:59:59`;
+  
+      for (const meterId of meter_id_list) {
+        try {
+          const liveTable = `[EMS_thermax].[dbo].[master_live_data_m${meterId}]`;
+          const averageTable = `[EMS_thermax].[dbo].[average_m${meterId}]`;
+          const energyConsumptionTable = `[EMS_thermax].[dbo].[energy_consumption]`;
+  
+          console.log(`Processing hourly averages for Meter ID ${meterId}, Table: ${liveTable}`);
+  
+          // Fetch the last inserted date in energy_consumption
+          const lastDateQuery = `
+            SELECT TOP 1 CONVERT(VARCHAR(10), date_time, 120) AS lastDate
+            FROM ${energyConsumptionTable}
+            WHERE meter_id = ${meterId}
+            ORDER BY date_time DESC;
+          `;
+          const lastDateResult = await pool.request().query(lastDateQuery);
+          const lastDate = lastDateResult.recordset.length > 0 ? lastDateResult.recordset[0].lastDate : null;
+  
+          // Calculate hourly kWh consumption difference
+          const Hr_C_kwh_query = `
+            WITH HourlyData AS (
+                SELECT
+                    FORMAT(date_time, 'yyyy-MM-dd HH') AS hour_group,
+                    meter_id,
+                    kWh,
+                    ROW_NUMBER() OVER (PARTITION BY FORMAT(date_time, 'yyyy-MM-dd HH') ORDER BY date_time ASC) AS rn_first,
+                    ROW_NUMBER() OVER (PARTITION BY FORMAT(date_time, 'yyyy-MM-dd HH') ORDER BY date_time DESC) AS rn_last
+                FROM ${liveTable}
+            ),
+            FirstLastEntries AS (
+                SELECT
+                    hour_group,
+                    meter_id,
+                    MAX(CASE WHEN rn_first = 1 THEN kWh END) AS kWh_first,
+                    MAX(CASE WHEN rn_last = 1 THEN kWh END) AS kWh_last
+                FROM HourlyData
+                GROUP BY hour_group, meter_id
+            )
+            SELECT
+                MAX(kWh_last - kWh_first) AS kWh_difference
+            FROM FirstLastEntries
+            WHERE meter_id = ${meterId};
+          `;
+          const Hr_C_kwh = await pool.request().query(Hr_C_kwh_query);
+          const kWhDifference = Hr_C_kwh.recordset[0]?.kWh_difference || 0;
+  
+          console.log(`Calculated hourly kWh difference for Meter ${meterId}: ${kWhDifference}`);
+  
+          // Calculate averages
+          const avgQuery = `
+            SELECT 
+              meter_id, 
+              MAX(load_name) AS load_name, 
+              AVG(CAST(Vry AS FLOAT)) AS avgVry,
+              AVG(CAST(Vyb AS FLOAT)) AS avgVyb,
+              AVG(CAST(Vbr AS FLOAT)) AS avgVbr,
+              AVG(CAST(VLN1 AS FLOAT)) AS avgVLN1,
+              AVG(CAST(VLN2 AS FLOAT)) AS avgVLN2,
+              AVG(CAST(VLN3 AS FLOAT)) AS avgVLN3,
+              AVG(CAST(VLL1 AS FLOAT)) AS avgVLL1,
+              AVG(CAST(VLL2 AS FLOAT)) AS avgVLL2,
+              AVG(CAST(VLL3 AS FLOAT)) AS avgVLL3,
+              AVG(CAST(Ir AS FLOAT)) AS avgIr,
+              AVG(CAST(Iy AS FLOAT)) AS avgIy,
+              AVG(CAST(Ib AS FLOAT)) AS avgIb,
+              AVG(CAST(PF AS FLOAT)) AS avgPF,
+              AVG(CAST(F AS FLOAT)) AS avgF,
+              AVG(CAST(kW AS FLOAT)) AS avgKW,
+              AVG(CAST(kWh AS FLOAT)) AS avgKWh,
+              AVG(CAST(kVAh AS FLOAT)) AS avgKVAh,
+              AVG(CAST(MD AS FLOAT)) AS avgMD,
+              MIN(CAST(MD AS FLOAT)) AS minMD,
+              MAX(CAST(MD AS FLOAT)) AS maxMD,
+              FORMAT(MAX(date_time), 'yyyy-MM-dd HH:mm:ss') AS avgDate
+            FROM ${liveTable}
+            WHERE TRY_CAST(date_time AS DATETIME) IS NOT NULL
+              AND date_time BETWEEN '${startDatetime}' AND '${endDatetime}'
+            GROUP BY meter_id;
+          `;
+          const avgResult = await pool.request().query(avgQuery);
+  
+          for (const avgData of avgResult.recordset) {
+            const { meter_id, load_name } = avgData;
+  
+            // Insert hourly averages into the average table
+            const insertAvgQuery = `
+              INSERT INTO ${averageTable}
+                (meter_id, load_name, Vry, Vyb, Vbr, VLN1, VLN2, VLN3, VLL1, VLL2, VLL3, Ir, Iy, Ib, PF, F, kW, kWh, kVAh, kwh_C, date_time, MD, minMD, maxMD)
+              VALUES
+                (${meter_id}, '${load_name}', ${avgData.avgVry}, ${avgData.avgVyb}, ${avgData.avgVbr}, ${avgData.avgVLN1}, ${avgData.avgVLN2}, ${avgData.avgVLN3},
+                 ${avgData.avgVLL1}, ${avgData.avgVLL2}, ${avgData.avgVLL3}, ${avgData.avgIr}, ${avgData.avgIy}, ${avgData.avgIb},
+                 ${avgData.avgPF}, ${avgData.avgF}, ${avgData.avgKW}, ${avgData.avgKWh}, ${avgData.avgKVAh}, ${kWhDifference}, '${startDatetime}', ${avgData.avgMD}, ${avgData.minMD}, ${avgData.maxMD});
+            `;
+            await pool.request().query(insertAvgQuery);
+            console.log(`Hourly average data inserted for Meter ${meter_id}.`);
+          }
+  
+          // Delete live data after processing
+          const deleteQuery = `
+            DELETE FROM ${liveTable}
+            WHERE date_time BETWEEN '${startDatetime}' AND '${endDatetime}';
+          `;
+          const deleteResult = await pool.request().query(deleteQuery);
+          console.log(`Hourly data deleted for Meter ${meterId}. Rows affected: ${deleteResult.rowsAffected}`);
+        } catch (err) {
+          console.error(`Error processing hourly averages for Meter ${meterId}:`, err);
+        }
+      }
+  
+      console.log("Hourly averages processed successfully for all meters.");
+    } catch (err) {
+      console.error("Error processing hourly averages for meters:", err);
+    }
+  }
+  
+
+
+
+// async function calculateAndInsertDailyData(meterId, last_date) {
+//   try {
+//     const pool = await sql.connect(sqlConfig);
+
+//     // Define table names
+//     const averageTable = `[EMS_thermax].[dbo].[average_m${meterId}]`;
+//     const energyConsumptionTable = `[EMS_thermax].[dbo].[energy_consumption]`;
+
+//     console.log(`Processing daily data for meter ID: ${meterId}`);
+
+//     // Fetch the last inserted date in the average table
+//     const lastDateQuery = `
+//         SELECT TOP 1 CONVERT(VARCHAR(10), date_time, 120) AS lastDate
+//         FROM ${averageTable}
+//         WHERE meter_id = ${meterId}
+//         ORDER BY sr_no DESC;
+//       `;
+//     const lastDateResult = await pool.request().query(lastDateQuery);
+
+//     console.log("lastdate data query  ", lastDateQuery);
+
+//     console.log("lastdate data ", lastDateResult);
+
+//     // const lastDate = lastDateResult.recordset.length > 0 ? lastDateResult.recordset[0].lastDate : null;
+
+//     const lastDate = last_date;
+//     // Get the current date
+//     //   const currentDate = new Date().toISOString().slice(0, 10); // Format: YYYY-MM-DD
+//     const now = new Date();
+//     const year = now.getFullYear();
+//     const month = String(now.getMonth() + 1).padStart(2, '0');
+//     const day = String(now.getDate()).padStart(2, '0');
+//     const currentDate = `${year}-${month}-${day}`;
+//     const previesDate = String(now.getDate() - 1).padStart(2, '0');
+//     console.log("previesDate", previesDate);
+//     // Process data only if the date has changed
+//     if (currentDate !== lastDate) {
+//       console.log(`Date changed: Processing data for ${currentDate}. Previous processed date was ${lastDate}.`);
+
+//       // Query to calculate daily averages and sums
+//       const dailyQuery = `
+//           SELECT 
+//             meter_id,
+//             MAX(load_name) AS load_name,
+//             AVG(CAST(kWh AS FLOAT)) AS avgKWh, -- Average of kWh
+//             SUM(CAST(kwh_C AS FLOAT)) AS sumKWh, -- Sum of kWh
+//             AVG(CAST(Vry AS FLOAT)) AS avgVry,
+//             AVG(CAST(Vyb AS FLOAT)) AS avgVyb,
+//             AVG(CAST(Vbr AS FLOAT)) AS avgVbr,
+//             AVG(CAST(VLN1 AS FLOAT)) AS avgVLN1,
+//             AVG(CAST(VLN2 AS FLOAT)) AS avgVLN2,
+//             AVG(CAST(VLN3 AS FLOAT)) AS avgVLN3,
+//             AVG(CAST(Ir AS FLOAT)) AS avgIr,
+//             AVG(CAST(Iy AS FLOAT)) AS avgIy,
+//             AVG(CAST(Ib AS FLOAT)) AS avgIb,
+//             AVG(CAST(PF AS FLOAT)) AS avgPF,
+//             AVG(CAST(F AS FLOAT)) AS avgF,
+//             AVG(CAST(kW AS FLOAT)) AS avgKW,
+//             AVG(CAST(kVAh AS FLOAT)) AS avgKVAh,
+//             AVG(CAST(MD AS FLOAT)) AS avgMD,   
+//             MIN(CAST(MD AS FLOAT)) AS minMD,
+//            MAX(CAST(MD AS FLOAT)) AS maxMD,
+
+//             CONVERT(VARCHAR(10), TRY_CAST(date_time AS DATETIME), 120) AS avgDate
+//           FROM ${averageTable}
+//           WHERE CONVERT(VARCHAR(10), TRY_CAST(date_time AS DATETIME), 120) = '${lastDate}'
+//           GROUP BY meter_id, CONVERT(VARCHAR(10), TRY_CAST(date_time AS DATETIME), 120);
+//         `;
+//       console.log("dailyQuery", dailyQuery);
+
+//       // Execute the query
+//       const dailyResult = await pool.request().query(dailyQuery);
+
+//       // Insert the results into the energy consumption table
+//       for (const dailyData of dailyResult.recordset) {
+//         const { meter_id, load_name, avgDate, avgKWh, sumKWh } = dailyData;
+
+
+//         // const insertQuery = `
+//         //     INSERT INTO ${energyConsumptionTable}
+//         //       (meter_id, load_name, Vry, Vyb, Vbr, VLN1, VLN2, VLN3,  Ir, Iy, Ib, PF, F, kW, kVAh, kWh, kWh_C, date_time, MD, minMD, maxMD)
+//         //     VALUES
+//         //       (${meter_id}, '${load_name}', ${dailyData.avgVry}, ${dailyData.avgVyb}, ${dailyData.avgVbr}, 
+//         //        ${dailyData.avgVLN1}, ${dailyData.avgVLN2}, ${dailyData.avgVLN3},  ${dailyData.avgIr}, ${dailyData.avgIy}, ${dailyData.avgIb}, ${dailyData.avgPF}, 
+//         //        ${dailyData.avgF}, ${dailyData.avgKW}, ${dailyData.avgKVAh}, ${avgKWh}, ${sumKWh}, '${avgDate}', ${dailyData.avgMD}, ${avgData.minMD}, ${avgData.maxMD});
+//         //   `;
+
+//         const insertQuery = `
+//     INSERT INTO ${energyConsumptionTable}
+//       (meter_id, load_name, Vry, Vyb, Vbr, VLN1, VLN2, VLN3,  Ir, Iy, Ib, PF, F, kW, kVAh, kWh, kWh_C, date_time, MD, minMD, maxMD)
+//     VALUES
+//       (${meter_id}, '${load_name}', ${dailyData.avgVry}, ${dailyData.avgVyb}, ${dailyData.avgVbr}, 
+//        ${dailyData.avgVLN1}, ${dailyData.avgVLN2}, ${dailyData.avgVLN3},  
+//        ${dailyData.avgIr}, ${dailyData.avgIy}, ${dailyData.avgIb}, ${dailyData.avgPF}, 
+//        ${dailyData.avgF}, ${dailyData.avgKW}, ${dailyData.avgKVAh}, ${avgKWh}, ${sumKWh}, 
+//        '${avgDate}', ${dailyData.avgMD}, ${dailyData.minMD}, ${dailyData.maxMD});
+//   `;
+
+//         await pool.request().query(insertQuery);
+//         console.log("insertQuery", insertQuery);
+
+//         console.log(`Inserted daily data for Meter ${meter_id} on ${avgDate}`);
+//       }
+//     } else {
+//       console.log(`No new date to process for Meter ${meterId}. Current date is ${currentDate}, last processed date was ${lastDate}.`);
+//     }
+//   } catch (err) {
+//     console.error(`Error processing daily data for Meter ${meterId}:`, err);
+//   }
+// }
+
+////////////////////////////////////////////daily end //////////////////////////////////////////////////
+// /////////////////////////////////////////////weekly start /////////////////////////////////////////////
+
+
+
+
+let meter_id_list = [1, 2, 3, 4, 5, 6, 7, 8]; // List of meter IDs
+
+async function calculateAndInsertDailyDataForAllMeters(lastDate) {
   try {
     const pool = await sql.connect(sqlConfig);
-
-    // Define table names
-    const averageTable = `[EMS_thermax].[dbo].[average_m${meterId}]`;
     const energyConsumptionTable = `[EMS_thermax].[dbo].[energy_consumption]`;
 
-    console.log(`Processing daily data for meter ID: ${meterId}`);
+    for (const meterId of meter_id_list) {
+      try {
+        const averageTable = `[EMS_thermax].[dbo].[average_m${meterId}]`;
 
-    // Fetch the last inserted date in the average table
-    const lastDateQuery = `
-        SELECT TOP 1 CONVERT(VARCHAR(10), date_time, 120) AS lastDate
-        FROM ${averageTable}
-        WHERE meter_id = ${meterId}
-        ORDER BY sr_no DESC;
-      `;
-    const lastDateResult = await pool.request().query(lastDateQuery);
+        console.log(`Processing daily data for Meter ID: ${meterId}`);
 
-    console.log("lastdate data query  ", lastDateQuery);
-
-    console.log("lastdate data ", lastDateResult);
-
-    // const lastDate = lastDateResult.recordset.length > 0 ? lastDateResult.recordset[0].lastDate : null;
-
-    const lastDate = last_date;
-    // Get the current date
-    //   const currentDate = new Date().toISOString().slice(0, 10); // Format: YYYY-MM-DD
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const day = String(now.getDate()).padStart(2, '0');
-    const currentDate = `${year}-${month}-${day}`;
-    const previesDate = String(now.getDate() - 1).padStart(2, '0');
-    console.log("previesDate", previesDate);
-    // Process data only if the date has changed
-    if (currentDate !== lastDate) {
-      console.log(`Date changed: Processing data for ${currentDate}. Previous processed date was ${lastDate}.`);
-
-      // Query to calculate daily averages and sums
-      const dailyQuery = `
+        // Query to calculate daily averages and sums
+        const dailyQuery = `
           SELECT 
             meter_id,
             MAX(load_name) AS load_name,
@@ -427,58 +648,47 @@ async function calculateAndInsertDailyData(meterId, last_date) {
             AVG(CAST(kVAh AS FLOAT)) AS avgKVAh,
             AVG(CAST(MD AS FLOAT)) AS avgMD,   
             MIN(CAST(MD AS FLOAT)) AS minMD,
-           MAX(CAST(MD AS FLOAT)) AS maxMD,
-
+            MAX(CAST(MD AS FLOAT)) AS maxMD,
             CONVERT(VARCHAR(10), TRY_CAST(date_time AS DATETIME), 120) AS avgDate
           FROM ${averageTable}
           WHERE CONVERT(VARCHAR(10), TRY_CAST(date_time AS DATETIME), 120) = '${lastDate}'
           GROUP BY meter_id, CONVERT(VARCHAR(10), TRY_CAST(date_time AS DATETIME), 120);
         `;
-      console.log("dailyQuery", dailyQuery);
+        console.log("Daily Query for Meter:", dailyQuery);
 
-      // Execute the query
-      const dailyResult = await pool.request().query(dailyQuery);
+        const dailyResult = await pool.request().query(dailyQuery);
 
-      // Insert the results into the energy consumption table
-      for (const dailyData of dailyResult.recordset) {
-        const { meter_id, load_name, avgDate, avgKWh, sumKWh } = dailyData;
+        // Insert the results into the energy consumption table
+        for (const dailyData of dailyResult.recordset) {
+          const { meter_id, load_name, avgDate, avgKWh, sumKWh } = dailyData;
 
+          const insertQuery = `
+            INSERT INTO ${energyConsumptionTable}
+              (meter_id, load_name, Vry, Vyb, Vbr, VLN1, VLN2, VLN3, Ir, Iy, Ib, PF, F, kW, kVAh, kWh, kWh_C, date_time, MD, minMD, maxMD)
+            VALUES
+              (${meter_id}, '${load_name}', ${dailyData.avgVry}, ${dailyData.avgVyb}, ${dailyData.avgVbr}, 
+               ${dailyData.avgVLN1}, ${dailyData.avgVLN2}, ${dailyData.avgVLN3}, ${dailyData.avgIr}, ${dailyData.avgIy}, ${dailyData.avgIb}, 
+               ${dailyData.avgPF}, ${dailyData.avgF}, ${dailyData.avgKW}, ${dailyData.avgKVAh}, ${avgKWh}, ${sumKWh}, 
+               '${avgDate}', ${dailyData.avgMD}, ${dailyData.minMD}, ${dailyData.maxMD});
+          `;
+          await pool.request().query(insertQuery);
 
-        // const insertQuery = `
-        //     INSERT INTO ${energyConsumptionTable}
-        //       (meter_id, load_name, Vry, Vyb, Vbr, VLN1, VLN2, VLN3,  Ir, Iy, Ib, PF, F, kW, kVAh, kWh, kWh_C, date_time, MD, minMD, maxMD)
-        //     VALUES
-        //       (${meter_id}, '${load_name}', ${dailyData.avgVry}, ${dailyData.avgVyb}, ${dailyData.avgVbr}, 
-        //        ${dailyData.avgVLN1}, ${dailyData.avgVLN2}, ${dailyData.avgVLN3},  ${dailyData.avgIr}, ${dailyData.avgIy}, ${dailyData.avgIb}, ${dailyData.avgPF}, 
-        //        ${dailyData.avgF}, ${dailyData.avgKW}, ${dailyData.avgKVAh}, ${avgKWh}, ${sumKWh}, '${avgDate}', ${dailyData.avgMD}, ${avgData.minMD}, ${avgData.maxMD});
-        //   `;
-
-        const insertQuery = `
-    INSERT INTO ${energyConsumptionTable}
-      (meter_id, load_name, Vry, Vyb, Vbr, VLN1, VLN2, VLN3,  Ir, Iy, Ib, PF, F, kW, kVAh, kWh, kWh_C, date_time, MD, minMD, maxMD)
-    VALUES
-      (${meter_id}, '${load_name}', ${dailyData.avgVry}, ${dailyData.avgVyb}, ${dailyData.avgVbr}, 
-       ${dailyData.avgVLN1}, ${dailyData.avgVLN2}, ${dailyData.avgVLN3},  
-       ${dailyData.avgIr}, ${dailyData.avgIy}, ${dailyData.avgIb}, ${dailyData.avgPF}, 
-       ${dailyData.avgF}, ${dailyData.avgKW}, ${dailyData.avgKVAh}, ${avgKWh}, ${sumKWh}, 
-       '${avgDate}', ${dailyData.avgMD}, ${dailyData.minMD}, ${dailyData.maxMD});
-  `;
-
-        await pool.request().query(insertQuery);
-        console.log("insertQuery", insertQuery);
-
-        console.log(`Inserted daily data for Meter ${meter_id} on ${avgDate}`);
+          console.log(`Inserted daily data for Meter ${meter_id} on ${avgDate}`);
+        }
+      } catch (err) {
+        console.error(`Error processing daily data for Meter ${meterId}:`, err);
       }
-    } else {
-      console.log(`No new date to process for Meter ${meterId}. Current date is ${currentDate}, last processed date was ${lastDate}.`);
     }
+
+    console.log("Daily data processed successfully for all meters.");
   } catch (err) {
-    console.error(`Error processing daily data for Meter ${meterId}:`, err);
+    console.error("Error processing daily data for all meters:", err);
   }
 }
 
-////////////////////////////////////////////daily end //////////////////////////////////////////////////
-// /////////////////////////////////////////////weekly start /////////////////////////////////////////////
+
+
+
 
 async function calculateAndInsertWeeklyData(meterId) {
   try {
